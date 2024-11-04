@@ -28,6 +28,7 @@
         <button id="checkButton">Revisar</button>
     </div>
     <p id="progress"></p>
+    <p id="indice"></p>
     <p id="score"></p>
     <p id="resultMessage" class="hidden"></p>
     <script>
@@ -154,6 +155,8 @@
             // document.getElementById('progress').textContent = `Progreso: ${currentQuestionIndex + 1} / ${questions.length}`;
             console.log(deletedQuestions);
             document.getElementById('progress').textContent = `Progreso: ${totalQuestions - questions.length} / ${totalQuestions - deletedQuestions.size}`;
+            const progressPercentage = ((totalQuestions - questions.length) / (totalQuestions - deletedQuestions.size)) * 100;
+            document.getElementById('indice').textContent = `Índice: ${progressPercentage.toFixed(2)}%`;
         }
 
         function checkAnswer() {
