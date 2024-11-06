@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cuestionario</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <style>
+        /* General Layout */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #74ebd5, #9face6);
+            color: #333;
+            text-align: center;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            font-size: 2em;
+            color: #ffffff;
+            text-shadow: 1px 1px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Input and Button Styles */
+        input[type="file"] {
+            margin-bottom: 20px;
+            padding: 10px 15px;
+            font-size: 1em;
+            cursor: pointer;
+            background-color: #ffffff;
+            border: 2px solid #333;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+
+        input[type="file"]:hover {
+            background-color: #eeeeee;
+        }
+
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            font-size: 1em;
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            transition: background 0.3s, transform 0.2s;
+            color: #ffffff;
+        }
+
+        #syncMode, #randomMode {
+            background-color: #6a89cc;
+        }
+
+        #syncMode:hover, #randomMode:hover {
+            background-color: #4a69bd;
+            transform: translateY(-2px);
+        }
+
+        #playButton, #checkButton {
+            background-color: #38ada9;
+        }
+
+        #playButton:hover, #checkButton:hover {
+            background-color: #079992;
+            transform: translateY(-2px);
+        }
+
+        #deleteButton {
+            display: none; /* Ocultar botón de eliminar */
+        }
+
+        #deleteIfCorrectButton {
+            background-color: #eb3b5a;
+            color: #ffffff;
+        }
+
+        #deleteIfCorrectButton:hover {
+            background-color: #fc5c65;
+            transform: translateY(-2px);
+        }
+
+        #restartButton {
+            background-color: #f8a5c2;
+        }
+
+        #restartButton:hover {
+            background-color: #f78fb3;
+            transform: translateY(-2px);
+        }
+
+        /* Container Styling */
+        #modeSelection, #questionContainer {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            max-width: 800px; /* Ancho más amplio */
+            width: 100%;
+            margin-bottom: 20px;
+        }
+
+        /* Question Text */
+        #question {
+            font-size: 1.2em;
+            margin-bottom: 20px;
+            color: #333333;
+        }
+
+        /* Answer Styling */
+        #answers {
+            text-align: left; /* Alineación de las respuestas a la izquierda */
+        }
+
+        #answers label {
+            display: block;
+            margin: 3px 0; /* Menor separación entre las respuestas */
+            padding: 8px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        #answers input[type="radio"],
+        #answers input[type="checkbox"] {
+            margin-right: 10px;
+        }
+
+        #answers label:hover {
+            background-color: #dfe6e9;
+        }
+
+        .correct {
+            background-color: #a3e4d7;
+            color: #2e7d32;
+        }
+
+        .incorrect {
+            background-color: #ffcccc;
+            color: #c62828;
+        }
+
+        /* Progress and Result */
+        #progress, #indice, #score, #resultMessage {
+            margin-top: 10px;
+            font-size: 1em;
+            color: #ffffff;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.1);
+        }
+
+        #resultMessage {
+            color: #f8a5c2;
+        }
+
+</style>
+</head>
+<body>
+    <h1>Cuestionario</h1>
+    <input type="file" id="fileInput" accept=".xlsx" />
+    <div id="modeSelection" class="hidden">
+        <button id="syncMode">Modo Sincrónico</button>
+        <button id="randomMode">Modo Aleatorio</button>
+    </div>
+    <div id="questionContainer" class="hidden">
+        <p id="question"></p>
+        <button id="playButton">Reproducir</button>
+        <button id="deleteButton" class="hidden">Eliminar Pregunta</button>
+        <button id="restartButton">Reiniciar Juego</button>
+        <div id="answers"></div>
+        <button id="checkButton">Revisar</button>
+        <button id="deleteIfCorrectButton" class="delete-correct">Revisar y Eliminar</button>
+    </div>
+    <p id="indice"></p>
+    <p id="progress"></p>
+    <p id="score"></p>
+    <p id="resultMessage" class="hidden"></p>
+    <script>
+        document.getElementById('fileInput').addEventListener('change', handleFile, false);
+        document.getElementById('syncMode').addEventListener('click', () => startQuiz(false));
+        document.getElementById('randomMode').addEventListener('click', () => startQuiz(true));
+        document.getElementById('playButton').addEventListener('click', () => speakQuestion(document.getElementById('question').textContent));
+        document.getElementById('deleteIfCorrectButton').addEventListener('click', checkAndDeleteIfCorrect);
+        document.getElementById('restartButton').addEventListener('click', resetQuiz);
+
+        let questions = [];
+        let answers = [];
+        let allQuestions = [];
+        let deletedQuestions = new Set();
+        let incorrectQuestions = [];
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let totalQuestions = 0;
+        let randomOrder = false;
+        let correctCount = 0;
+        let reingresadasCount = 0;
+
+        function handleFile(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+
+                processExcelData(rows);
+                console.log({ questions, answers });
+                document.getElementById('modeSelection').classList.remove('hidden');
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function processExcelData(rows) {
+            let currentQuestion = null;
+            rows.forEach(row => {
+                if (row[0].startsWith('>')) {
+                    if (currentQuestion) {
+                        currentQuestion.answers.push(row[0].substring(1).trim().toLowerCase());
+                    }
+                } else {
+                    if (currentQuestion) {
+                        questions.push(currentQuestion);
+                        allQuestions.push({ ...currentQuestion });
+                    }
+                    currentQuestion = { question: row[0], answers: [] };
+                }
+            });
+            if (currentQuestion) {
+                questions.push(currentQuestion);
+                allQuestions.push({ ...currentQuestion });
+            }
+            questions.forEach(q => answers.push(...q.answers));
+            totalQuestions = questions.length;
+        }
+
+        function startQuiz(isRandom) {
+            randomOrder = isRandom;
+            resetCounters();
+            if (randomOrder) {
+                questions.sort(() => Math.random() - 0.5);
+            }
+            document.getElementById('modeSelection').classList.add('hidden');
+            document.getElementById('questionContainer').classList.remove('hidden');
+            showQuestion();
+        }
+
+        function showQuestion() {
+            if (currentQuestionIndex >= questions.length) {
+                if (incorrectQuestions.length > 0) {
+                    questions = incorrectQuestions.filter(q => !deletedQuestions.has(q.question));
+                    incorrectQuestions = [];
+                    currentQuestionIndex = 0;
+                    alert('Iniciando nuevo circuito con preguntas incorrectas.');
+                    showQuestion();
+                } else {
+                    const totalOriginalQuestions = totalQuestions + reingresadasCount;
+                    document.getElementById('resultMessage').textContent = `Quiz completado. Respuestas correctas: ${correctCount}, Respuestas reingresadas: ${reingresadasCount}, Porcentaje de respuestas correctas: ${(correctCount / totalOriginalQuestions) * 100}%`;
+                    document.getElementById('resultMessage').classList.remove('hidden');
+                    document.getElementById('questionContainer').classList.add('hidden');
+                }
+                return;
+            }
+
+            const currentQuestion = questions[currentQuestionIndex];
+            document.getElementById('question').textContent = currentQuestion.question;
+
+            const answerContainer = document.getElementById('answers');
+            answerContainer.innerHTML = '';
+            const correctAnswers = currentQuestion.answers;
+            const allAnswers = [...correctAnswers];
+
+            if (correctAnswers.length === 1 && (correctAnswers[0].toLowerCase() === 'verdadero' || correctAnswers[0].toLowerCase() === 'falso')) {
+                allAnswers.push(correctAnswers[0] === 'verdadero' ? 'falso' : 'verdadero');
+            } else {
+                while (allAnswers.length < 5) {
+                    const randomAnswer = answers[Math.floor(Math.random() * answers.length)];
+                    if (!allAnswers.includes(randomAnswer)) {
+                        allAnswers.push(randomAnswer);
+                    }
+                }
+            }
+
+            allAnswers.sort(() => Math.random() - 0.5);
+
+            allAnswers.forEach(answer => {
+                const label = document.createElement('label');
+                const input = document.createElement('input');
+                input.type = correctAnswers.length > 1 ? 'checkbox' : 'radio';
+                input.name = 'answer';
+                input.value = answer;
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(answer));
+                answerContainer.appendChild(label);
+                answerContainer.appendChild(document.createElement('br'));
+            });
+
+            document.getElementById('checkButton').addEventListener('click', checkAnswer);
+            const progressPercentage = ((totalQuestions - questions.length) / (totalQuestions - deletedQuestions.size)) * 100;
+            document.getElementById('indice').textContent = `Índice: ${progressPercentage.toFixed(2)}%`;
+            const denominator = deletedQuestions.size === 0 ? totalQuestions : totalQuestions - deletedQuestions.size - correctCount;
+            document.getElementById('progress').textContent = `Respondidas: ${correctCount} / ${denominator}`;
+        }
+
+        function checkAnswer() {
+            const currentQuestion = questions[currentQuestionIndex];
+            const selectedAnswers = Array.from(document.querySelectorAll('input[name="answer"]:checked')).map(input => input.value);
+
+            const isCorrect = selectedAnswers.length === currentQuestion.answers.length && selectedAnswers.every(answer => currentQuestion.answers.includes(answer));
+
+            const labels = document.querySelectorAll('#answers label');
+            labels.forEach(label => {
+                const input = label.querySelector('input');
+                if (currentQuestion.answers.includes(input.value)) {
+                    label.classList.add('correct');
+                } else if (input.checked) {
+                    label.classList.add('incorrect');
+                }
+            });
+
+            if (isCorrect) {
+                score++;
+                correctCount++;
+                questions.splice(currentQuestionIndex, 1); // Eliminar pregunta correcta
+            } else {
+                score--;
+                reingresadasCount++;
+                incorrectQuestions.push(currentQuestion);
+                currentQuestionIndex++;
+            }
+
+            document.getElementById('score').textContent = `Incorrectas: ${incorrectQuestions.length === 0 ? 0 : incorrectQuestions.length}`;
+            document.getElementById('checkButton').removeEventListener('click', checkAnswer);
+            setTimeout(() => {
+                resetColors();
+                showQuestion();
+            }, 2000);
+
+
+        }
+
+        function checkAndDeleteIfCorrect() {
+            // Revisamos si la respuesta es correcta
+            const currentQuestion = questions[currentQuestionIndex];
+            const selectedAnswers = Array.from(document.querySelectorAll('input[name="answer"]:checked')).map(input => input.value);
+            const isCorrect = selectedAnswers.length === currentQuestion.answers.length &&
+                            selectedAnswers.every(answer => currentQuestion.answers.includes(answer));
+
+            // Si la respuesta es correcta, eliminamos la pregunta usando el proceso original
+            if (isCorrect) {
+                deleteCurrentQuestion(); // Reutilizamos el proceso de eliminación
+            }
+        }
+
+        function resetColors() {
+            const labels = document.querySelectorAll('#answers label');
+            labels.forEach(label => {
+                label.classList.remove('correct', 'incorrect');
+            });
+        }
+
+        function deleteCurrentQuestion() {
+            const deletedQuestion = questions.splice(currentQuestionIndex, 1)[0];
+            deletedQuestions.add(deletedQuestion.question);
+            if (currentQuestionIndex >= questions.length) {
+                currentQuestionIndex = 0;
+            }
+            showQuestion();
+        }
+
+        function resetQuiz() {
+            questions = allQuestions.filter(q => !deletedQuestions.has(q.question)); // Reseteamos las preguntas, excluyendo las eliminadas
+            document.getElementById('questionContainer').classList.add('hidden');
+            document.getElementById('modeSelection').classList.remove('hidden');
+            resetCounters();
+        }
+
+        function resetCounters() {
+            currentQuestionIndex = 0;
+            correctCount = 0;
+            reingresadasCount = 0;
+            score = 0;
+            incorrectQuestions = [];
+            if (randomOrder) {
+                questions.sort(() => Math.random() - 0.5);
+            }
+        }
+
+        function speakQuestion(text) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            window.speechSynthesis.speak(utterance);
+        }
+    </script>
+</body>
+</html>
