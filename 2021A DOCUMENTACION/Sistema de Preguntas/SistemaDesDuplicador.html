@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procesador de Preguntas</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <script>
+        function processFile(event) {
+            const file = event.target.files[0];
+            const reader = new FileReader();
+
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                const processedData = processRows(rows);
+                downloadProcessedData(processedData);
+            };
+
+            reader.readAsArrayBuffer(file);
+        }
+
+        function processRows(rows) {
+            const questions = [];
+            let currentQuestion = null;
+
+            rows.forEach((row, rowIndex) => {
+                if (typeof row[0] === 'string') {
+                    if (!row[0].startsWith('>')) {
+                        currentQuestion = { question: row[0], rowIndex, answers: [] };
+                        questions.push(currentQuestion);
+                    } else if (currentQuestion) {
+                        currentQuestion.answers.push({ answer: row[0], rowIndex });
+                    }
+                }
+            });
+
+            const uniqueQuestions = filterSimilarQuestions(questions);
+            return generateOutputRows(uniqueQuestions, rows.length);
+        }
+
+        function filterSimilarQuestions(questions) {
+            const uniqueQuestions = [];
+            const removedIndices = new Set();
+
+            questions.forEach((q1, i) => {
+                if (removedIndices.has(q1.rowIndex)) return;
+                uniqueQuestions.push(q1);
+
+                for (let j = i + 1; j < questions.length; j++) {
+                    const q2 = questions[j];
+                    if (levenshtein(q1.question, q2.question) / Math.max(q1.question.length, q2.question.length) < 0.1) {
+                        removedIndices.add(q2.rowIndex);
+                        q2.answers.forEach(a => removedIndices.add(a.rowIndex));
+                    }
+                }
+            });
+            return uniqueQuestions;
+        }
+
+        function levenshtein(a, b) {
+            const matrix = Array.from({ length: b.length + 1 }, () => []);
+            for (let i = 0; i <= b.length; i++) matrix[i][0] = i;
+            for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+            for (let i = 1; i <= b.length; i++) {
+                for (let j = 1; j <= a.length; j++) {
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j - 1] + (b[i - 1] === a[j - 1] ? 0 : 1)
+                    );
+                }
+            }
+            return matrix[b.length][a.length];
+        }
+
+        function generateOutputRows(uniqueQuestions, totalRows) {
+            const outputRows = Array(totalRows).fill(null);
+            uniqueQuestions.forEach(q => {
+                outputRows[q.rowIndex] = [q.question];
+                q.answers.forEach((answer) => {
+                    outputRows[answer.rowIndex] = [answer.answer];
+                });
+            });
+            return outputRows.filter(row => row !== null);
+        }
+
+        function downloadProcessedData(data) {
+            const worksheet = XLSX.utils.aoa_to_sheet(data);
+            const newWorkbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(newWorkbook, worksheet, 'Sheet1');
+            XLSX.writeFile(newWorkbook, 'processed_questions.xlsx');
+        }
+    </script>
+</head>
+<body>
+    <h1>Procesador de Preguntas</h1>
+    <input type="file" id="fileInput" accept=".xlsx" onchange="processFile(event)">
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cuestionario</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <style>
+        .hidden { display: none; }
+        .highlight { background-color: yellow; }
+    </style>
+</head>
+<body>
+    <h1>Cuestionario</h1>
+    <input type="file" id="fileInput" accept=".xlsx" />
+    <div id="questionContainer" class="hidden">
+        <p id="question"></p>
+        <div id="answers"></div>
+        <button id="checkButton">Revisar</button>
+    </div>
+    <p id="progress"></p>
+    <p id="score"></p>
+    <p id="resultMessage" class="hidden"></p>
+    <script>
+        document.getElementById('fileInput').addEventListener('change', handleFile, false);
+
+        let questions = [];
+        let answers = [];
+        let incorrectQuestions = [];
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let totalQuestions = 0;
+        
+        function handleFile(e) {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+
+                processExcelData(rows);
+                console.log({ questions, answers });
+                document.getElementById('questionContainer').classList.remove('hidden');
+                showQuestion();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function processExcelData(rows) {
+            let currentQuestion = null;
+            rows.forEach(row => {
+                if (row[0].startsWith('>')) {
+                    if (currentQuestion) {
+                        currentQuestion.answers.push(row[0].substring(1).trim());
+                    }
+                } else {
+                    if (currentQuestion) {
+                        questions.push(currentQuestion);
+                    }
+                    currentQuestion = { question: row[0], answers: [] };
+                }
+            });
+            if (currentQuestion) {
+                questions.push(currentQuestion);
+            }
+            questions.forEach(q => answers.push(...q.answers));
+            totalQuestions = questions.length;
+        }
+
+        function showQuestion() {
+            if (currentQuestionIndex >= questions.length) {
+                if (incorrectQuestions.length > 0) {
+                    questions = incorrectQuestions;
+                    incorrectQuestions = [];
+                    currentQuestionIndex = 0;
+                    alert('Iniciando nuevo circuito con preguntas incorrectas.');
+                    showQuestion();
+                } else {
+                    document.getElementById('resultMessage').textContent = `Quiz completado. Porcentaje de respuestas correctas: ${(score / totalQuestions) * 100}%`;
+                    document.getElementById('resultMessage').classList.remove('hidden');
+                    document.getElementById('questionContainer').classList.add('hidden');
+                }
+                return;
+            }
+
+            const currentQuestion = questions[currentQuestionIndex];
+            document.getElementById('question').textContent = currentQuestion.question;
+
+            const answerContainer = document.getElementById('answers');
+            answerContainer.innerHTML = '';
+            const correctAnswers = currentQuestion.answers;
+            const allAnswers = [...correctAnswers];
+
+            while (allAnswers.length < 5) {
+                const randomAnswer = answers[Math.floor(Math.random() * answers.length)];
+                if (!allAnswers.includes(randomAnswer)) {
+                    allAnswers.push(randomAnswer);
+                }
+            }
+
+            allAnswers.sort(() => Math.random() - 0.5);
+
+            allAnswers.forEach(answer => {
+                const label = document.createElement('label');
+                const input = document.createElement('input');
+                input.type = correctAnswers.length > 1 ? 'checkbox' : 'radio';
+                input.name = 'answer';
+                input.value = answer;
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(answer));
+                answerContainer.appendChild(label);
+                answerContainer.appendChild(document.createElement('br'));
+            });
+
+            document.getElementById('checkButton').addEventListener('click', checkAnswer);
+            document.getElementById('progress').textContent = `Progreso: ${currentQuestionIndex + 1} / ${totalQuestions}`;
+        }
+
+        function checkAnswer() {
+            const currentQuestion = questions[currentQuestionIndex];
+            const selectedAnswers = Array.from(document.querySelectorAll('input[name="answer"]:checked')).map(input => input.value);
+
+            const isCorrect = selectedAnswers.length === currentQuestion.answers.length && selectedAnswers.every(answer => currentQuestion.answers.includes(answer));
+            if (isCorrect) {
+                score++;
+                alert('Respuesta correcta!');
+            } else {
+                score--;
+                alert('Respuesta incorrecta.');
+                incorrectQuestions.push(currentQuestion);
+            }
+
+            document.getElementById('score').textContent = `Puntuación: ${score}`;
+            document.getElementById('checkButton').removeEventListener('click', checkAnswer);
+            currentQuestionIndex++;
+            showQuestion();
+        }
+    </script>
+</body>
+</html>
